@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # greatest_otp_bot.py
 # Seven1Tel login+fetch -> Telegram OTP forwarder
-# DO NOT put secrets in this file. Use Railway environment variables.
+# Uses Railway environment variables
 
 import os
 import time
@@ -16,184 +16,204 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 USERNAME = os.getenv("USERNAME")
 PASSWORD = os.getenv("PASSWORD")
-BASE_URL = os.getenv("BASE_URL") # e.g. http://94.23.120.156
-POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "3"))
+BASE_URL = os.getenv("BASE_URL")  # e.g. http://94.23.120.156
+POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "5"))
 ALREADY_FILE = os.getenv("ALREADY_SENT_FILE", "already_sent.json")
 
-LOGIN_PAGE_URL = (BASE_URL.rstrip("/") + "/ints/login") if BASE_URL else None
-LOGIN_POST_URL = (BASE_URL.rstrip("/") + "/ints/signin") if BASE_URL else None
-DATA_URL = (BASE_URL.rstrip("/") + "/ints/agent/res/data_smscdr.php") if BASE_URL else None
+LOGIN_PAGE_URL = f"{BASE_URL.rstrip('/')}/ints/login" if BASE_URL else None
+LOGIN_POST_URL = f"{BASE_URL.rstrip('/')}/ints/signin" if BASE_URL else None
+DATA_URL = f"{BASE_URL.rstrip('/')}/ints/agent/res/data_smscdr.php" if BASE_URL else None
 
 # ---------------- Logging ----------------
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
 log = logging.getLogger("greatest_otp_bot")
 
-# ---------------- HTTP session & Telegram helper ----------------
+# ---------------- HTTP session ----------------
 session = requests.Session()
 session.headers.update({"User-Agent": "Mozilla/5.0 (seven1-forwarder)"})
 
 TELEGRAM_SEND_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage" if BOT_TOKEN else None
 
+
 # ---------------- Helpers ----------------
 def load_already_sent(path: str):
-try:
-with open(path, "r", encoding="utf-8") as f:
-return set(json.load(f))
-except FileNotFoundError:
-return set()
-except Exception as e:
-log.warning("Could not load already_sent file: %s", e)
-return set()
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return set(json.load(f))
+    except FileNotFoundError:
+        return set()
+    except Exception as e:
+        log.warning("Could not load already_sent file: %s", e)
+        return set()
+
 
 def save_already_sent(path: str, s: set):
-try:
-with open(path, "w", encoding="utf-8") as f:
-json.dump(list(s), f)
-except Exception as e:
-log.warning("Could not save already_sent file: %s", e)
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(list(s), f)
+    except Exception as e:
+        log.warning("Could not save already_sent file: %s", e)
+
 
 def escape_md_v2(text: str) -> str:
-if text is None:
-return ""
-return re.sub(r'([_*[\]()~`>#+=|{}.!-])', r'\\\1', str(text))
+    if text is None:
+        return ""
+    return re.sub(r'([_*[\]()~`>#+=|{}.!-])', r'\\\1', str(text))
 
-# Flexible OTP extractor
+
 def extract_otp(message: str) -> Optional[str]:
-if not message:
-return None
-text = message.strip()
+    """Extract OTP (3–6 digits) from message text"""
+    if not message:
+        return None
+    text = message.strip()
 
-# normalize separators/spaces
-normalized = re.sub(r'[\s\-]+', '', text)
-normalized = re.sub(r'(\d)\s+(\d)', r'\1\2', normalized)
+    # normalize
+    normalized = re.sub(r'[\s\-]+', '', text)
+    normalized = re.sub(r'(\d)\s+(\d)', r'\1\2', normalized)
 
-# keyword-based
-kw = re.compile(r'(?i)\b(?:code|otp|pin|passcode|verification)[^\d]{0,12}(\d{3,6})\b')
-m = kw.search(text)
-if m:
-return m.group(1)
+    # keyword based
+    kw = re.compile(r'(?i)\b(?:code|otp|pin|passcode|verification)[^\d]{0,12}(\d{3,6})\b')
+    m = kw.search(text)
+    if m:
+        return m.group(1)
 
-# fallback 3-6 digits
-m2 = re.search(r'(?<!\d)(\d{3,6})(?!\d)', normalized)
-if m2:
-return m2.group(1)
+    # fallback digits
+    m2 = re.search(r'(?<!\d)(\d{3,6})(?!\d)', normalized)
+    if m2:
+        return m2.group(1)
 
-return None
+    return None
+
 
 # ---------------- Telegram sender ----------------
 def send_telegram(chat_id: str, text: str) -> bool:
-if not TELEGRAM_SEND_URL:
-log.error("BOT_TOKEN not set. Cannot send to Telegram.")
-return False
-payload = {
-"chat_id": chat_id,
-"text": text,
-"parse_mode": "MarkdownV2",
-"disable_web_page_preview": True
-}
-try:
-r = requests.post(TELEGRAM_SEND_URL, data=payload, timeout=15)
-if r.status_code != 200:
-log.warning("Telegram send failed: %s %s", r.status_code, r.text[:200])
-return False
-return True
-except Exception as e:
-log.exception("Telegram send exception: %s", e)
-return False
+    if not TELEGRAM_SEND_URL:
+        log.error("BOT_TOKEN not set. Cannot send to Telegram.")
+        return False
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "MarkdownV2",
+        "disable_web_page_preview": True
+    }
+    try:
+        r = requests.post(TELEGRAM_SEND_URL, data=payload, timeout=15)
+        if r.status_code != 200:
+            log.warning("Telegram send failed: %s %s", r.status_code, r.text[:200])
+            return False
+        return True
+    except Exception as e:
+        log.exception("Telegram send exception: %s", e)
+        return False
+
 
 # ---------------- Provider: login + fetch ----------------
 def login_and_fetch():
-if not (LOGIN_PAGE_URL and LOGIN_POST_URL and USERNAME and PASSWORD and DATA_URL):
-log.error("Missing LOGIN_PAGE_URL/LOGIN_POST_URL/USERNAME/PASSWORD/DATA_URL")
-return None
+    if not (LOGIN_PAGE_URL and LOGIN_POST_URL and USERNAME and PASSWORD and DATA_URL):
+        log.error("Missing LOGIN_PAGE_URL/LOGIN_POST_URL/USERNAME/PASSWORD/DATA_URL")
+        return None
 
-try:
-log.info("GET login page: %s", LOGIN_PAGE_URL)
-r = session.get(LOGIN_PAGE_URL, timeout=12)
-if not r.ok:
-log.warning("Login page returned: %s", r.status_code)
+    try:
+        log.info("GET login page: %s", LOGIN_PAGE_URL)
+        r = session.get(LOGIN_PAGE_URL, timeout=12)
+        if not r.ok:
+            log.warning("Login page status: %s", r.status_code)
 
-# captcha solver
-m = re.search(r'(\d+)\s*\+\s*(\d+)', r.text)
-payload = {"username": USERNAME, "password": PASSWORD}
-if m:
-try:
-payload["capt"] = int(m.group(1)) + int(m.group(2))
-log.info("Solved simple captcha: %s", payload["capt"])
-except Exception:
-pass
+        # captcha solver
+        m = re.search(r'(\d+)\s*\+\s*(\d+)', r.text)
+        payload = {"username": USERNAME, "password": PASSWORD}
+        if m:
+            try:
+                payload["capt"] = int(m.group(1)) + int(m.group(2))
+                log.info("Solved captcha: %s", payload["capt"])
+            except Exception:
+                pass
 
-r2 = session.post(LOGIN_POST_URL, data=payload, timeout=12)
-log.info("Login POST status: %s", r2.status_code)
+        log.info("POST login: %s", LOGIN_POST_URL)
+        r2 = session.post(LOGIN_POST_URL, data=payload, timeout=12)
+        log.info("Login POST status: %s", r2.status_code)
 
-if r2.ok and ("dashboard" in r2.text.lower() or "logout" in r2.text.lower()):
-log.info("Login successful, fetching data...")
-r3 = session.get(DATA_URL, headers={"X-Requested-With":"XMLHttpRequest"}, timeout=15)
-if r3.ok:
-try:
-return r3.json()
-except Exception as e:
-log.warning("Data endpoint JSON decode failed: %s", e)
-return None
-else:
-log.warning("Data endpoint returned: %s", r3.status_code)
-return None
-else:
-log.warning("Login likely failed or unexpected response content.")
-return None
+        if r2.ok and ("dashboard" in r2.text.lower() or "logout" in r2.text.lower()):
+            log.info("Login success, fetching data…")
+            r3 = session.get(DATA_URL, headers={"X-Requested-With": "XMLHttpRequest"}, timeout=15)
+            if r3.ok:
+                try:
+                    return r3.json()
+                except Exception as e:
+                    log.warning("Data JSON decode failed: %s", e)
+                    return None
+        else:
+            log.warning("Login failed or unexpected response.")
+            return None
 
-except Exception as e:
-log.exception("login_and_fetch exception: %s", e)
-return None
+    except Exception as e:
+        log.error("Login error: %s", str(e))
+        return None
+
 
 # ---------------- Parse provider JSON ----------------
 def parse_provider_data(data):
-out = []
-if not data:
-return out
-if isinstance(data, dict) and "aaData" in data:
-for row in data["aaData"]:
-try:
-date = str(row[0]) if len(row) > 0 else ""
-number = str(row[2]) if len(row) > 2 else ""
-service = str(row[3]) if len(row) > 3 else ""
-message = str(row[5]) if len(row) > 5 else ""
-out.append({"number": number, "message": message, "service": service, "date": date})
-except:
-continue
-return out
+    out = []
+    if not data:
+        return out
+    if isinstance(data, dict) and "aaData" in data:
+        for row in data["aaData"]:
+            try:
+                date = str(row[0]) if len(row) > 0 else ""
+                number = str(row[2]) if len(row) > 2 else ""
+                service = str(row[3]) if len(row) > 3 else ""
+                message = str(row[5]) if len(row) > 5 else ""
+                out.append({
+                    "number": number,
+                    "message": message,
+                    "service": service,
+                    "date": date
+                })
+            except Exception:
+                continue
+    return out
+
 
 # ---------------- Main loop ----------------
 def main_loop():
-if not BOT_TOKEN or not CHAT_ID:
-log.error("BOT_TOKEN or CHAT_ID missing in environment.")
-return
-already = load_already_sent(ALREADY_FILE)
-log.info("Forwarder started. Poll interval: %s seconds", POLL_INTERVAL)
-while True:
-try:
-data = login_and_fetch()
-msgs = parse_provider_data(data)
-for m in msgs:
-number = (m.get("number") or "").strip()
-message = (m.get("message") or "").strip()
-otp = extract_otp(message)
-if not otp:
-continue
-key = f"{number}|{otp}"
-if key in already:
-continue
-text = f"🔑 OTP: `{escape_md_v2(otp)}`\n📞 From: `{escape_md_v2(number)}`\n💬 Message:\n```{escape_md_v2(message)}```"
-if send_telegram(CHAT_ID, text):
-already.add(key)
-save_already_sent(ALREADY_FILE, already)
-log.info("Forwarded OTP %s from %s", otp, number)
-except Exception as e:
-log.exception("Main loop error: %s", e)
-time.sleep(POLL_INTERVAL)
+    if not BOT_TOKEN or not CHAT_ID:
+        log.error("BOT_TOKEN or CHAT_ID missing in environment.")
+        return
+    already = load_already_sent(ALREADY_FILE)
+    log.info("Forwarder started. Poll interval: %s seconds", POLL_INTERVAL)
+
+    while True:
+        try:
+            data = login_and_fetch()
+            msgs = parse_provider_data(data)
+            for m in msgs:
+                number = (m.get("number") or "").strip()
+                message = (m.get("message") or "").strip()
+                otp = extract_otp(message)
+                if not otp:
+                    continue
+                key = f"{number}|{otp}"
+                if key in already:
+                    continue
+                text = (
+                    f"🔑 OTP: `{escape_md_v2(otp)}`\n"
+                    f"📞 From: `{escape_md_v2(number)}`\n"
+                    f"💬 Message:\n```{escape_md_v2(message)}```"
+                )
+                if send_telegram(CHAT_ID, text):
+                    already.add(key)
+                    save_already_sent(ALREADY_FILE, already)
+                    log.info("Forwarded OTP %s from %s", otp, number)
+        except Exception as e:
+            log.error("Main loop error: %s", str(e))
+        time.sleep(POLL_INTERVAL)
+
 
 # ---------------- Entrypoint ----------------
 if __name__ == "__main__":
-log.info("Starting greatest_otp_bot forwarder (login+fetch).")
-log.info("LOGIN_PAGE_URL=%s DATA_URL=%s", LOGIN_PAGE_URL, DATA_URL)
-main_loop()
+    log.info("Starting greatest_otp_bot forwarder")
+    log.info("LOGIN_PAGE_URL=%s DATA_URL=%s", LOGIN_PAGE_URL, DATA_URL)
+    main_loop()
