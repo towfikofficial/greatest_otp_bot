@@ -1,0 +1,5 @@
+requests
+phonenumbers
+pycountry
+python-telegram-bot
+python-dotenv
