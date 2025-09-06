@@ -280,7 +280,8 @@ def main_loop():
         time.sleep(POLL_INTERVAL)
 
 # ---------------- Entrypoint ----------------
-if _name_ == "_main_":
+if __name__ == "__main__":
     log.info("✅ Starting greatest_otp_bot forwarder (login+fetch).")
     log.info("LOGIN_PAGE_URL=%s DATA_URL=%s", LOGIN_PAGE_URL, DATA_URL)
     main_loop()
+
