@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# greatest_otp_bot.py (modified with debug + headers)
+# greatest_otp_bot.py (fixed DATA_URL + stable fetch)
 
 import os
 import time
@@ -15,12 +15,13 @@ CHAT_ID = os.getenv("CHAT_ID")
 USERNAME = os.getenv("USERNAME")
 PASSWORD = os.getenv("PASSWORD")
 BASE_URL = os.getenv("BASE_URL")  # e.g. http://94.23.120.156
-POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "10"))  # default 10 sec
+POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "10"))
 ALREADY_FILE = os.getenv("ALREADY_SENT_FILE", "already_sent.json")
 
 LOGIN_PAGE_URL = f"{BASE_URL.rstrip('/')}/ints/login" if BASE_URL else None
 LOGIN_POST_URL = f"{BASE_URL.rstrip('/')}/ints/signin" if BASE_URL else None
-DATA_URL = f"{BASE_URL.rstrip('/')}/ints/agent/res/data_smscdr.php" if BASE_URL else None
+# ✅ Corrected path
+DATA_URL = f"{BASE_URL.rstrip('/')}/ints/data_smscdr.php" if BASE_URL else None
 
 # ---------------- Logging ----------------
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -130,7 +131,7 @@ def parse_provider_data(data):
                     "date": str(row[0]),
                     "number": str(row[2]),
                     "service": str(row[3]),
-                    "message": str(row[5]),
+                    "message": str(row[1] if len(row) > 1 else row[5]),
                 })
             except:
                 continue
