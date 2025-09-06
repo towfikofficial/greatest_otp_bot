@@ -126,9 +126,6 @@ pass
 r2 = session.post(LOGIN_POST_URL, data=payload, timeout=12)
 log.info("Login POST status: %s", r2.status_code)
 
-# Debug: log first 200 chars of response
-log.debug("Login POST response preview: %s", r2.text[:200])
-
 if r2.ok and ("dashboard" in r2.text.lower() or "logout" in r2.text.lower()):
 log.info("Login successful, fetching data...")
 r3 = session.get(DATA_URL, headers={"X-Requested-With":"XMLHttpRequest"}, timeout=15)
