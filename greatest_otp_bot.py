@@ -87,22 +87,22 @@ def extract_otp(message: str) -> Optional[str]:
         return None
     text = message.strip()
 
-    # normalize separators/spaces: "12-34-56" -> "123456", "6 9 4 6" -> "6946"
+    # normalize separators/spaces
     normalized = re.sub(r'[\s\-]+', '', text)
     normalized = re.sub(r'(\d)\s+(\d)', r'\1\2', normalized)
 
-    # 1) keyword-based: code/otp/pin near digits
+    # keyword-based search
     kw = re.compile(r'(?i)\b(?:code|otp|pin|passcode|verification|security code|your code|one-time|verification code)[^\d]{0,12}(\d{3,6})\b')
     m = kw.search(text)
     if m:
         return m.group(1)
 
-    # 2) normalized search for 3-6 digits
+    # normalized digit search
     m2 = re.search(r'(?<!\d)(\d{3,6})(?!\d)', normalized)
     if m2:
         return m2.group(1)
 
-    # 3) fallback: any 3-6 digit sequence in original
+    # fallback
     m3 = re.search(r'(?<!\d)(\d{3,6})(?!\d)', text)
     if m3:
         return m3.group(1)
@@ -132,10 +132,6 @@ def send_telegram(chat_id: str, text: str) -> bool:
 
 # ---------------- Provider: login + fetch ----------------
 def login_and_fetch():
-    """
-    Login to the panel and fetch DATA_URL JSON.
-    Returns JSON object or None.
-    """
     if not (LOGIN_PAGE_URL and LOGIN_POST_URL and USERNAME and PASSWORD and DATA_URL):
         log.error("Missing LOGIN_PAGE_URL/LOGIN_POST_URL/USERNAME/PASSWORD/DATA_URL")
         return None
@@ -146,7 +142,7 @@ def login_and_fetch():
         if not r.ok:
             log.warning("Login page returned: %s", r.status_code)
 
-        # try to auto-solve simple arithmetic captcha shown like "What is 3 + 4"
+        # auto-solve simple captcha like "What is 3 + 4"
         m = re.search(r'(\d+)\s*\+\s*(\d+)', r.text)
         payload = {"username": USERNAME, "password": PASSWORD}
         if m:
@@ -160,8 +156,7 @@ def login_and_fetch():
         r2 = session.post(LOGIN_POST_URL, data=payload, headers=headers, timeout=12)
         log.info("Login POST status: %s", r2.status_code)
 
-        # Heuristics for success: 200 + "dashboard" or "logout" in response
-        if r2.ok and ("dashboard" in r2.text.lower() or "logout" in r2.text.lower() or r2.status_code == 200):
+        if r2.ok and ("dashboard" in r2.text.lower() or "logout" in r2.text.lower()):
             log.info("Login seems ok, fetching DATA_URL: %s", DATA_URL)
             r3 = session.get(DATA_URL, headers={"X-Requested-With":"XMLHttpRequest"}, timeout=15)
             log.info("Data URL status: %s", r3.status_code)
@@ -179,13 +174,12 @@ def login_and_fetch():
         log.exception("login_and_fetch exception: %s", e)
         return None
 
-# ---------------- Parse provider JSON to normalized messages ----------------
+# ---------------- Parse provider JSON ----------------
 def parse_provider_data(data):
     out = []
     if not data:
         return out
 
-    # datatables style aaData (common)
     if isinstance(data, dict) and "aaData" in data and isinstance(data["aaData"], list):
         for row in data["aaData"]:
             try:
@@ -198,7 +192,6 @@ def parse_provider_data(data):
                 continue
         return out
 
-    # list of dicts
     if isinstance(data, list):
         for item in data:
             if isinstance(item, dict):
@@ -209,7 +202,6 @@ def parse_provider_data(data):
                 out.append({"number": str(number), "message": str(message), "service": service, "date": date})
         return out
 
-    # wrapped dict with messages/data/items
     if isinstance(data, dict):
         for key in ("messages", "data", "items"):
             if key in data and isinstance(data[key], list):
@@ -289,6 +281,6 @@ def main_loop():
 
 # ---------------- Entrypoint ----------------
 if _name_ == "_main_":
-    log.info("Starting greatest_otp_bot forwarder (login+fetch).")
+    log.info("✅ Starting greatest_otp_bot forwarder (login+fetch).")
     log.info("LOGIN_PAGE_URL=%s DATA_URL=%s", LOGIN_PAGE_URL, DATA_URL)
     main_loop()
