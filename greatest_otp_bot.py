@@ -65,23 +65,24 @@ def extract_otp(message: str) -> Optional[str]:
         return m2.group(1)
     return None
 
-def send_telegram(chat_id: str, text: str) -> bool:
+def send_telegram(chat_id: str, text: str, retries: int = 3) -> bool:
     if not TELEGRAM_SEND_URL:
         log.error("BOT_TOKEN not set.")
         return False
-    try:
-        r = requests.post(TELEGRAM_SEND_URL, data={
-            "chat_id": chat_id,
-            "text": text,
-            "parse_mode": "MarkdownV2"
-        }, timeout=15)
-        if r.ok:
-            return True
-        log.warning("Telegram send failed: %s %s", r.status_code, r.text)
-        return False
-    except Exception as e:
-        log.error("Telegram exception: %s", e)
-        return False
+    for attempt in range(retries):
+        try:
+            r = requests.post(TELEGRAM_SEND_URL, data={
+                "chat_id": chat_id,
+                "text": text,
+                "parse_mode": "MarkdownV2"
+            }, timeout=15)
+            if r.ok:
+                return True
+            log.warning("Telegram send failed (%s): %s", r.status_code, r.text)
+        except Exception as e:
+            log.error("Telegram exception: %s", e)
+        time.sleep(2)
+    return False
 
 # ---------------- Login & fetch ----------------
 def login_and_fetch():
@@ -94,20 +95,24 @@ def login_and_fetch():
         if m:
             payload["capt"] = int(m.group(1)) + int(m.group(2))
             log.info("Solved captcha: %s", payload["capt"])
+        else:
+            log.warning("Captcha not found on login page!")
 
         r2 = session.post(LOGIN_POST_URL, data=payload, timeout=12)
         log.info("Login POST status: %s", r2.status_code)
 
         if r2.ok and ("dashboard" in r2.text.lower() or "logout" in r2.text.lower()):
-            log.info("Login success, fetching data…")
+            log.info("Login success ✅, fetching data…")
             r3 = session.get(DATA_URL, headers={"X-Requested-With": "XMLHttpRequest"}, timeout=15)
             if r3.ok:
                 try:
                     return r3.json()
                 except Exception as e:
                     log.error("Data JSON decode failed: %s", e)
+            else:
+                log.warning("Data fetch failed: %s", r3.status_code)
         else:
-            log.warning("Login failed or unexpected response.")
+            log.warning("Login failed ❌ or unexpected response.")
     except Exception as e:
         log.error("Login error: %s", e)
     return None
@@ -123,8 +128,11 @@ def parse_provider_data(data):
                     "service": str(row[3]),
                     "message": str(row[5]),
                 })
-            except:
+            except Exception as e:
+                log.warning("Row parse error: %s", e)
                 continue
+    else:
+        log.warning("No aaData found in provider response.")
     return out
 
 # ---------------- Main loop ----------------
@@ -138,6 +146,11 @@ def main_loop():
 
     while True:
         data = login_and_fetch()
+        if not data:
+            log.warning("No data received, retrying after %s sec…", POLL_INTERVAL)
+            time.sleep(POLL_INTERVAL)
+            continue
+
         msgs = parse_provider_data(data)
         for m in msgs:
             otp = extract_otp(m.get("message", ""))
