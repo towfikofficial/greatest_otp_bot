@@ -131,10 +131,54 @@ def send_telegram(chat_id: str, text: str) -> bool:
         return False
 
 # ---------------- Provider: login + fetch ----------------
+# ---------------- Provider: login + fetch ----------------
 def login_and_fetch():
-    if not (LOGIN_PAGE_URL and LOGIN_POST_URL and USERNAME and PASSWORD and DATA_URL):
-        log.error("Missing LOGIN_PAGE_URL/LOGIN_POST_URL/USERNAME/PASSWORD/DATA_URL")
-        return None
+"""
+Login to the panel and fetch DATA_URL JSON.
+Returns JSON object or None.
+"""
+if not (LOGIN_PAGE_URL and LOGIN_POST_URL and USERNAME and PASSWORD and DATA_URL):
+log.error("Missing LOGIN_PAGE_URL/LOGIN_POST_URL/USERNAME/PASSWORD/DATA_URL")
+return None
+
+try:
+log.info("GET login page: %s", LOGIN_PAGE_URL)
+r = session.get(LOGIN_PAGE_URL, timeout=12)
+if not r.ok:
+log.warning("Login page returned: %s", r.status_code)
+
+# try to auto-solve simple arithmetic captcha shown like "What is 3 + 4"
+m = re.search(r'(\d+)\s*\+\s*(\d+)', r.text)
+payload = {"username": USERNAME, "password": PASSWORD}
+if m:
+try:
+payload["capt"] = int(m.group(1)) + int(m.group(2))
+log.info("Solved simple captcha: %s", payload["capt"])
+except Exception:
+pass
+
+headers = {"Content-Type": "application/x-www-form-urlencoded", "Referer": LOGIN_PAGE_URL}
+r2 = session.post(LOGIN_POST_URL, data=payload, headers=headers, timeout=12)
+log.info("Login POST status: %s", r2.status_code)
+
+# ✅ Modified: only check status code, not text
+if r2.ok:
+log.info("Login response looks OK (status 200). Proceeding to fetch DATA_URL: %s", DATA_URL)
+r3 = session.get(DATA_URL, headers={"X-Requested-With":"XMLHttpRequest"}, timeout=15)
+log.info("Data URL status: %s", r3.status_code)
+if r3.ok:
+try:
+return r3.json()
+except Exception as e:
+log.warning("Data endpoint JSON decode failed: %s", e)
+return None
+else:
+log.warning("Login failed. Status: %s", r2.status_code)
+return None
+
+except Exception as e:
+log.exception("login_and_fetch exception: %s", e)
+return None
 
     try:
         log.info("GET login page: %s", LOGIN_PAGE_URL)
@@ -284,4 +328,5 @@ if __name__ == "__main__":
     log.info("✅ Starting greatest_otp_bot forwarder (login+fetch).")
     log.info("LOGIN_PAGE_URL=%s DATA_URL=%s", LOGIN_PAGE_URL, DATA_URL)
     main_loop()
+
 
