@@ -103,11 +103,12 @@ return False
 
 # ---------------- Provider: login + fetch ----------------
 def login_and_fetch():
+try:
 if not (LOGIN_PAGE_URL and LOGIN_POST_URL and USERNAME and PASSWORD and DATA_URL):
 log.error("Missing LOGIN_PAGE_URL/LOGIN_POST_URL/USERNAME/PASSWORD/DATA_URL")
 return None
 
-try:
+log.info("GET login page: %s", LOGIN_PAGE_URL)
 r = session.get(LOGIN_PAGE_URL, timeout=12)
 if not r.ok:
 log.warning("Login page returned: %s", r.status_code)
@@ -138,7 +139,7 @@ log.warning("Login likely failed or unexpected response content.")
 return None
 
 except Exception as e:
-log.exception("login_and_fetch exception: %s", e)
+log.error("Login error: %s", str(e))
 return None
 
 # ---------------- Parse provider JSON ----------------
