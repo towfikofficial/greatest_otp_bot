@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# greatest_otp_bot.py (final fixed)
+# greatest_otp_bot.py (final modified with correct DATA_URL params)
 
 import os
 import time
@@ -16,7 +16,7 @@ CHAT_ID = os.getenv("CHAT_ID")
 USERNAME = os.getenv("USERNAME")
 PASSWORD = os.getenv("PASSWORD")
 BASE_URL = os.getenv("BASE_URL")  # e.g. http://94.23.120.156
-POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "10"))  # default 10 sec
+POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "10"))
 ALREADY_FILE = os.getenv("ALREADY_SENT_FILE", "already_sent.json")
 
 LOGIN_PAGE_URL = f"{BASE_URL.rstrip('/')}/ints/login" if BASE_URL else None
@@ -106,9 +106,16 @@ def login_and_fetch():
             log.info("Login success ✅ fetching data…")
 
             today = datetime.now().strftime("%Y-%m-%d")
-            params = {"fdate1": today, "tdate1": today}
+            params = {
+                "fdate1": f"{today} 00:00:00",
+                "fdate2": f"{today} 23:59:59",
+                "sEcho": 1,
+                "iColumns": 9,
+                "iDisplayStart": 0,
+                "iDisplayLength": 25,
+            }
 
-            r3 = session.get(DATA_URL, params=params, headers={"X-Requested-With": "XMLHttpRequest"}, timeout=15)
+            r3 = session.get(DATA_URL, params=params, headers={"X-Requested-With": "XMLHttpRequest"}, timeout=20)
             log.info("Data fetch status: %s", r3.status_code)
 
             if r3.ok:
@@ -135,10 +142,9 @@ def parse_provider_data(data):
                     "date": str(row[0]),
                     "number": str(row[2]),
                     "service": str(row[3]),
-                    "message": str(row[1]),  # <-- fixed, row[1] = SMS body
+                    "message": str(row[5]),
                 })
-            except Exception as e:
-                log.warning("Row parse error: %s", e)
+            except:
                 continue
     return out
 
@@ -161,13 +167,7 @@ def main_loop():
             key = f"{m['number']}|{otp}"
             if key in already:
                 continue
-            text = (
-                f"🔑 OTP: `{escape_md_v2(otp)}`\n"
-                f"📞 From: `{escape_md_v2(m['number'])}`\n"
-                f"💬 `{escape_md_v2(m['message'])}`\n"
-                f"📅 `{escape_md_v2(m['date'])}`\n"
-                f"🔧 Service: `{escape_md_v2(m['service'])}`"
-            )
+            text = f"🔑 OTP: `{escape_md_v2(otp)}`\n📞 From: `{escape_md_v2(m['number'])}`\n💬 `{escape_md_v2(m['message'])}`"
             if send_telegram(CHAT_ID, text):
                 already.add(key)
                 save_already_sent(ALREADY_FILE, already)
