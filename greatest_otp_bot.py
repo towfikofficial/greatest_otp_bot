@@ -6,7 +6,7 @@ import re
 import asyncio
 import phonenumbers
 import pycountry
-import os  # <-- এটিই যোগ করতে হবে
+import os # এখানে os ইমপোর্ট করা হচ্ছে
 from telegram import Bot, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.error import TimedOut
 import sys
@@ -203,3 +203,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
