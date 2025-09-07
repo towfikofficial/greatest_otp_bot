@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# greatest_otp_bot.py (fixed DATA_URL + stable fetch)
+# greatest_otp_bot.py (final fixed)
 
 import os
 import time
@@ -8,6 +8,7 @@ import re
 import logging
 import requests
 from typing import Optional
+from datetime import datetime
 
 # ---------------- Config ----------------
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -15,13 +16,12 @@ CHAT_ID = os.getenv("CHAT_ID")
 USERNAME = os.getenv("USERNAME")
 PASSWORD = os.getenv("PASSWORD")
 BASE_URL = os.getenv("BASE_URL")  # e.g. http://94.23.120.156
-POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "10"))
+POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "10"))  # default 10 sec
 ALREADY_FILE = os.getenv("ALREADY_SENT_FILE", "already_sent.json")
 
 LOGIN_PAGE_URL = f"{BASE_URL.rstrip('/')}/ints/login" if BASE_URL else None
 LOGIN_POST_URL = f"{BASE_URL.rstrip('/')}/ints/signin" if BASE_URL else None
-# ✅ Corrected path
-DATA_URL = f"{BASE_URL.rstrip('/')}/ints/data_smscdr.php" if BASE_URL else None
+DATA_URL = f"{BASE_URL.rstrip('/')}/ints/agent/res/data_smscdr.php" if BASE_URL else None
 
 # ---------------- Logging ----------------
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -104,7 +104,11 @@ def login_and_fetch():
 
         if r2.ok and ("dashboard" in r2.text.lower() or "logout" in r2.text.lower()):
             log.info("Login success ✅ fetching data…")
-            r3 = session.get(DATA_URL, headers={"X-Requested-With": "XMLHttpRequest"}, timeout=15)
+
+            today = datetime.now().strftime("%Y-%m-%d")
+            params = {"fdate1": today, "tdate1": today}
+
+            r3 = session.get(DATA_URL, params=params, headers={"X-Requested-With": "XMLHttpRequest"}, timeout=15)
             log.info("Data fetch status: %s", r3.status_code)
 
             if r3.ok:
@@ -131,9 +135,10 @@ def parse_provider_data(data):
                     "date": str(row[0]),
                     "number": str(row[2]),
                     "service": str(row[3]),
-                    "message": str(row[1] if len(row) > 1 else row[5]),
+                    "message": str(row[1]),  # <-- fixed, row[1] = SMS body
                 })
-            except:
+            except Exception as e:
+                log.warning("Row parse error: %s", e)
                 continue
     return out
 
@@ -156,7 +161,13 @@ def main_loop():
             key = f"{m['number']}|{otp}"
             if key in already:
                 continue
-            text = f"🔑 OTP: `{escape_md_v2(otp)}`\n📞 From: `{escape_md_v2(m['number'])}`\n💬 `{escape_md_v2(m['message'])}`"
+            text = (
+                f"🔑 OTP: `{escape_md_v2(otp)}`\n"
+                f"📞 From: `{escape_md_v2(m['number'])}`\n"
+                f"💬 `{escape_md_v2(m['message'])}`\n"
+                f"📅 `{escape_md_v2(m['date'])}`\n"
+                f"🔧 Service: `{escape_md_v2(m['service'])}`"
+            )
             if send_telegram(CHAT_ID, text):
                 already.add(key)
                 save_already_sent(ALREADY_FILE, already)
