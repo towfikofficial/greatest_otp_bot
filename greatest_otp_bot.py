@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# greatest_otp_bot.py (final modified with correct DATA_URL params)
+# otp_forwarder.py (auto date version)
 
 import os
 import time
@@ -16,12 +16,12 @@ CHAT_ID = os.getenv("CHAT_ID")
 USERNAME = os.getenv("USERNAME")
 PASSWORD = os.getenv("PASSWORD")
 BASE_URL = os.getenv("BASE_URL")  # e.g. http://94.23.120.156
-POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "10"))
+POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "15"))
 ALREADY_FILE = os.getenv("ALREADY_SENT_FILE", "already_sent.json")
 
 LOGIN_PAGE_URL = f"{BASE_URL.rstrip('/')}/ints/login" if BASE_URL else None
 LOGIN_POST_URL = f"{BASE_URL.rstrip('/')}/ints/signin" if BASE_URL else None
-DATA_URL = f"{BASE_URL.rstrip('/')}/ints/agent/res/data_smscdr.php" if BASE_URL else None
+DATA_URL_BASE = f"{BASE_URL.rstrip('/')}/ints/agent/res/data_smscdr.php" if BASE_URL else None
 
 # ---------------- Logging ----------------
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -30,7 +30,7 @@ log = logging.getLogger("otp_forwarder")
 # ---------------- HTTP session ----------------
 session = requests.Session()
 session.headers.update({
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    "User-Agent": "Mozilla/5.0",
     "Accept": "application/json, text/javascript, */*; q=0.01",
     "X-Requested-With": "XMLHttpRequest",
 })
@@ -88,6 +88,12 @@ def send_telegram(chat_id: str, text: str) -> bool:
         return False
 
 # ---------------- Login & fetch ----------------
+def build_data_url():
+    today = datetime.now().strftime("%Y-%m-%d")
+    fdate1 = f"{today} 00:00:00"
+    fdate2 = f"{today} 23:59:59"
+    return f"{DATA_URL_BASE}?fdate1={fdate1}&fdate2={fdate2}&sEcho=1&iColumns=9&iDisplayStart=0&iDisplayLength=25"
+
 def login_and_fetch():
     try:
         log.info("GET login page: %s", LOGIN_PAGE_URL)
@@ -104,19 +110,9 @@ def login_and_fetch():
 
         if r2.ok and ("dashboard" in r2.text.lower() or "logout" in r2.text.lower()):
             log.info("Login success ✅ fetching data…")
-
-            today = datetime.now().strftime("%Y-%m-%d")
-            params = {
-                "fdate1": f"{today} 00:00:00",
-                "fdate2": f"{today} 23:59:59",
-                "sEcho": 1,
-                "iColumns": 9,
-                "iDisplayStart": 0,
-                "iDisplayLength": 25,
-            }
-
-            r3 = session.get(DATA_URL, params=params, headers={"X-Requested-With": "XMLHttpRequest"}, timeout=20)
-            log.info("Data fetch status: %s", r3.status_code)
+            data_url = build_data_url()
+            log.info("Fetching: %s", data_url)
+            r3 = session.get(data_url, headers={"X-Requested-With": "XMLHttpRequest"}, timeout=15)
 
             if r3.ok:
                 try:
@@ -176,6 +172,6 @@ def main_loop():
 
 # ---------------- Entrypoint ----------------
 if __name__ == "__main__":
-    log.info("Starting greatest_otp_bot forwarder (login+fetch).")
-    log.info("LOGIN_PAGE_URL=%s DATA_URL=%s", LOGIN_PAGE_URL, DATA_URL)
+    log.info("Starting otp_forwarder (auto-date).")
+    log.info("LOGIN_PAGE_URL=%s DATA_URL_BASE=%s", LOGIN_PAGE_URL, DATA_URL_BASE)
     main_loop()
