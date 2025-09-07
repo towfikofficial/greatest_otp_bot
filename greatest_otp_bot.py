@@ -1,177 +1,152 @@
-#!/usr/bin/env python3
-# otp_forwarder.py (auto date version)
-
-import os
-import time
-import json
-import re
-import logging
 import requests
-from typing import Optional
-from datetime import datetime
+import time
+import datetime
+import logging
+import re
+from bs4 import BeautifulSoup
 
-# ---------------- Config ----------------
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
-USERNAME = os.getenv("USERNAME")
-PASSWORD = os.getenv("PASSWORD")
-BASE_URL = os.getenv("BASE_URL")  # e.g. http://94.23.120.156
-POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "15"))
-ALREADY_FILE = os.getenv("ALREADY_SENT_FILE", "already_sent.json")
+# ------------------------
+# CONFIG
+# ------------------------
+BASE_URL = "http://94.23.120.156/ints"
+LOGIN_URL = BASE_URL + "/login"
+DATA_URL = BASE_URL + "/agent/res/data_smscdr.php"
 
-LOGIN_PAGE_URL = f"{BASE_URL.rstrip('/')}/ints/login" if BASE_URL else None
-LOGIN_POST_URL = f"{BASE_URL.rstrip('/')}/ints/signin" if BASE_URL else None
-DATA_URL_BASE = f"{BASE_URL.rstrip('/')}/ints/agent/res/data_smscdr.php" if BASE_URL else None
+USERNAME = "your_username"
+PASSWORD = "your_password"
 
-# ---------------- Logging ----------------
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-log = logging.getLogger("otp_forwarder")
+BOT_TOKEN = "your_telegram_bot_token"
+CHAT_ID = "your_chat_id"
 
-# ---------------- HTTP session ----------------
-session = requests.Session()
-session.headers.update({
-    "User-Agent": "Mozilla/5.0",
-    "Accept": "application/json, text/javascript, */*; q=0.01",
-    "X-Requested-With": "XMLHttpRequest",
-})
+POLL_INTERVAL = 10   # কত সেকেন্ড পর পর নতুন ডাটা আনবে
 
-TELEGRAM_SEND_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage" if BOT_TOKEN else None
+# ------------------------
+# LOGGING
+# ------------------------
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
-# ---------------- Helpers ----------------
-def load_already_sent(path: str):
+# ------------------------
+# TELEGRAM FUNCTION
+# ------------------------
+def send_telegram(text):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    payload = {"chat_id": CHAT_ID, "text": text}
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            return set(json.load(f))
-    except FileNotFoundError:
-        return set()
+        r = requests.post(url, data=payload, timeout=10)
+        if r.status_code == 200:
+            logging.info("📤 Sent to Telegram")
+        else:
+            logging.warning(f"⚠️ Telegram send failed: {r.text}")
     except Exception as e:
-        log.warning("Could not load already_sent file: %s", e)
-        return set()
+        logging.error(f"❌ Telegram error: {e}")
 
-def save_already_sent(path: str, s: set):
-    try:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(list(s), f)
-    except Exception as e:
-        log.warning("Could not save already_sent file: %s", e)
-
-def escape_md_v2(text: str) -> str:
-    return re.sub(r'([_*[\]()~`>#+=|{}.!-])', r'\\\1', str(text or ""))
-
-def extract_otp(message: str) -> Optional[str]:
+# ------------------------
+# OTP EXTRACT FUNCTION
+# ------------------------
+def extract_otp(message):
     if not message:
         return None
-    m = re.search(r'(?i)(?:otp|code|pin|passcode|verification)[^\d]{0,10}(\d{3,8})', message)
-    if m:
-        return m.group(1)
-    m2 = re.search(r'(?<!\d)(\d{3,8})(?!\d)', message)
-    if m2:
-        return m2.group(1)
-    return None
+    m = re.search(r"(\d{4,8})", message)
+    return m.group(1) if m else None
 
-def send_telegram(chat_id: str, text: str) -> bool:
-    if not TELEGRAM_SEND_URL:
-        log.error("BOT_TOKEN not set.")
-        return False
-    try:
-        r = requests.post(TELEGRAM_SEND_URL, data={
-            "chat_id": chat_id,
-            "text": text,
-            "parse_mode": "MarkdownV2"
-        }, timeout=15)
-        if r.ok:
-            return True
-        log.warning("Telegram send failed: %s %s", r.status_code, r.text)
-        return False
-    except Exception as e:
-        log.error("Telegram exception: %s", e)
+# ------------------------
+# LOGIN FUNCTION
+# ------------------------
+def login(session):
+    logging.info("🔑 Trying to login...")
+
+    resp = session.get(LOGIN_URL)
+    if resp.status_code != 200:
+        logging.error(f"❌ Login page load failed: {resp.status_code}")
         return False
 
-# ---------------- Login & fetch ----------------
-def build_data_url():
-    today = datetime.now().strftime("%Y-%m-%d")
-    fdate1 = f"{today} 00:00:00"
-    fdate2 = f"{today} 23:59:59"
-    return f"{DATA_URL_BASE}?fdate1={fdate1}&fdate2={fdate2}&sEcho=1&iColumns=9&iDisplayStart=0&iDisplayLength=25"
+    # --- Captcha Solve Logic ---
+    soup = BeautifulSoup(resp.text, "html.parser")
+    # এখানে captcha logic বসাও (এখন static ধরা হচ্ছে)
+    captcha = "12"
 
-def login_and_fetch():
-    try:
-        log.info("GET login page: %s", LOGIN_PAGE_URL)
-        r = session.get(LOGIN_PAGE_URL, timeout=12)
+    payload = {
+        "username": USERNAME,
+        "password": PASSWORD,
+        "captcha": captcha
+    }
 
-        payload = {"username": USERNAME, "password": PASSWORD}
-        m = re.search(r'(\d+)\s*\+\s*(\d+)', r.text)
-        if m:
-            payload["capt"] = int(m.group(1)) + int(m.group(2))
-            log.info("Solved captcha: %s", payload["capt"])
+    r = session.post(LOGIN_URL, data=payload)
+    if r.status_code == 200 and ("Dashboard" in r.text or "Logout" in r.text):
+        logging.info("✅ Login success")
+        return True
+    else:
+        logging.error(f"❌ Login failed: {r.status_code}")
+        return False
 
-        r2 = session.post(LOGIN_POST_URL, data=payload, timeout=12)
-        log.info("Login POST status: %s", r2.status_code)
+# ------------------------
+# FETCH DATA FUNCTION
+# ------------------------
+def fetch_data(session):
+    today = datetime.date.today()
+    fdate1 = today.strftime("%Y-%m-%d 00:00:00")
+    fdate2 = today.strftime("%Y-%m-%d 23:59:59")
 
-        if r2.ok and ("dashboard" in r2.text.lower() or "logout" in r2.text.lower()):
-            log.info("Login success ✅ fetching data…")
-            data_url = build_data_url()
-            log.info("Fetching: %s", data_url)
-            r3 = session.get(data_url, headers={"X-Requested-With": "XMLHttpRequest"}, timeout=15)
+    params = {
+        "fdate1": fdate1,
+        "fdate2": fdate2,
+        "sEcho": 1,
+        "iColumns": 9,
+        "iDisplayStart": 0,
+        "iDisplayLength": 25,
+    }
 
-            if r3.ok:
-                try:
-                    return r3.json()
-                except Exception as e:
-                    log.error("Data JSON decode failed: %s", e)
-                    log.debug("Raw response: %s", r3.text[:500])
-            else:
-                log.warning("Data fetch failed with status %s", r3.status_code)
-                log.debug("Raw response: %s", r3.text[:500])
-        else:
-            log.warning("Login failed or unexpected response.")
-    except Exception as e:
-        log.error("Login error: %s", e)
-    return None
-
-def parse_provider_data(data):
-    out = []
-    if isinstance(data, dict) and "aaData" in data:
-        for row in data["aaData"]:
+    for attempt in range(5):  # retry max 5 times
+        r = session.get(DATA_URL, params=params)
+        if r.status_code == 200:
             try:
-                out.append({
-                    "date": str(row[0]),
-                    "number": str(row[2]),
-                    "service": str(row[3]),
-                    "message": str(row[5]),
-                })
-            except:
-                continue
-    return out
+                return r.json()
+            except Exception as e:
+                logging.error(f"❌ JSON parse error: {e}")
+                return None
+        else:
+            logging.warning(f"⚠️ Data fetch failed (status {r.status_code}), retry {attempt+1}/5")
+            time.sleep(3)
 
-# ---------------- Main loop ----------------
-def main_loop():
-    if not BOT_TOKEN or not CHAT_ID:
-        log.error("BOT_TOKEN or CHAT_ID missing.")
+    logging.error("❌ Data fetch failed after retries")
+    return None
+
+# ------------------------
+# MAIN LOOP
+# ------------------------
+def main():
+    session = requests.Session()
+
+    if not login(session):
         return
 
-    already = load_already_sent(ALREADY_FILE)
-    log.info("Forwarder started. Poll interval: %s sec", POLL_INTERVAL)
+    already_sent = set()
 
     while True:
-        data = login_and_fetch()
-        msgs = parse_provider_data(data)
-        for m in msgs:
-            otp = extract_otp(m.get("message", ""))
-            if not otp:
-                continue
-            key = f"{m['number']}|{otp}"
-            if key in already:
-                continue
-            text = f"🔑 OTP: `{escape_md_v2(otp)}`\n📞 From: `{escape_md_v2(m['number'])}`\n💬 `{escape_md_v2(m['message'])}`"
-            if send_telegram(CHAT_ID, text):
-                already.add(key)
-                save_already_sent(ALREADY_FILE, already)
-                log.info("Forwarded OTP %s from %s", otp, m['number'])
+        data = fetch_data(session)
+        if data and "aaData" in data:
+            for row in data["aaData"]:
+                try:
+                    date = row[0]
+                    number = row[2]
+                    service = row[3]
+                    message = row[5]
+
+                    otp = extract_otp(message)
+                    key = f"{number}|{otp}"
+
+                    if otp and key not in already_sent:
+                        text = f"🔑 OTP: {otp}\n📞 From: {number}\n💬 {message}"
+                        send_telegram(text)
+                        already_sent.add(key)
+                        logging.info(f"✅ Forwarded OTP {otp} from {number}")
+                except Exception as e:
+                    logging.error(f"Parse error: {e}")
+
         time.sleep(POLL_INTERVAL)
 
-# ---------------- Entrypoint ----------------
 if __name__ == "__main__":
-    log.info("Starting otp_forwarder (auto-date).")
-    log.info("LOGIN_PAGE_URL=%s DATA_URL_BASE=%s", LOGIN_PAGE_URL, DATA_URL_BASE)
-    main_loop()
+    main()
